@@ -55,7 +55,7 @@ public:
     uint32_t ExecuteCommandList(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList);
 
     ID3D12DevicePtr GetDevice();
-    void WaitForFenceValue(uint64_t FenceValue, std::chrono::milliseconds Duration = (std::chrono::milliseconds::max()));
+    void WaitForFenceValue(uint64_t FenceValue, std::chrono::milliseconds Duration = std::chrono::milliseconds::max());
 
     void Flush();
 

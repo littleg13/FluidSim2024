@@ -19,6 +19,11 @@ public:
 
     static void GenerateSphereData()
     {
+        if (!Vertices.empty())
+        {
+            return;
+        }
+
         const int Segments = 3;
         const int Rings = 3;
         const float Radius = 0.005f;

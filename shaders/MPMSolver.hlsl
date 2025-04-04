@@ -1,5 +1,3 @@
-
-#define PARTICLE_COUNT 100000
 #define BLOCK_SIZE 8
 #define GROUP_SIZE 64 // Predefine BLOCK_SIZE^2
 
@@ -22,6 +20,7 @@ struct ParticlePhysicsData
 
 struct FluidParameters
 {
+    uint NumParticles;
     uint GridResolution;
     float Dx;
     float InvDx;
@@ -29,7 +28,6 @@ struct FluidParameters
     float ElasticLamda;
     float DeltaTime;
     float GridSize;
-    float1 _;
 };
 
 struct GridCell
@@ -115,7 +113,7 @@ matrix NeoHookeanStress(ParticleRenderData Particle, ParticlePhysicsData Physics
 void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
 {
     uint Index = GetThreadIndex(ThreadIndex, GroupId);
-    if (Index < PARTICLE_COUNT)
+    if (Index < Fluid.NumParticles)
     {
         Particles[Index].Velocity = float4(0.0f, 0.0f, 0.0f, 0.0f);
         ParticleRenderData Particle = Particles[Index];
@@ -192,7 +190,7 @@ void GridUpdate(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
 void ParticleToGrid(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
 {
     uint Index = GetThreadIndex(ThreadIndex, GroupId);
-    if (Index < PARTICLE_COUNT)
+    if (Index < Fluid.NumParticles)
     {
         ParticleRenderData Particle = Particles[Index];
         matrix Affine = NeoHookeanStress(Particle, ParticleData[Index]) * Fluid.DeltaTime + (ParticleData[Index].C * ParticleData[Index].Mass);

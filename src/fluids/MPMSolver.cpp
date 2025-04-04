@@ -28,7 +28,6 @@ ShaderDesc MPMClearGridComputeShader = {
     L"cs_6_0",
     L"ClearGrid"};
 
-const float MPMSolver::GRID_CLEAR[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 #define GROUP_SIZE 64.0f
 
 MPMSolver::MPMSolver(std::vector<ParticleRenderData>& Particles, FluidParameters& FluidParams)
@@ -83,9 +82,7 @@ void MPMSolver::CreateBuffers(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3
     RenderEngine->TransitionBarrier(CommandList, FluidParamBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
     HeapAllocation->CreateBufferUAV(ParticleDataBuffer, ParticleData.size(), sizeof(decltype(ParticleData.back())));
-    uint32_t GridBufferOffset = HeapAllocation->CreateBufferUAV(GridBuffer, Grid.size(), sizeof(decltype(Grid.back())));
-    GridBufferGPUHandle = HeapAllocation->GetGPUHandle(GridBufferOffset);
-    GridBufferCPUHandle = HeapAllocation->GetCPUHandle(GridBufferOffset);
+    HeapAllocation->CreateBufferUAV(GridBuffer, Grid.size(), sizeof(decltype(Grid.back())));
     HeapAllocation->CreateBufferCBV(FluidParamBuffer, 256);
 }
 
@@ -158,13 +155,9 @@ void MPMSolver::ParticleToGrid(const std::vector<ParticleRenderData>& Particles,
         Math::Vec2 CellDifference = Math::Vec2(Particle.Position.x * InvDx - CellIndex.x, Particle.Position.y * InvDx - CellIndex.y);
 
         // Precalculate quadratic weight coefficients
-        // Weights[0] = Math::Vec2(1.5f - CellDifference.x, 1.5f - CellDifference.y).Pow(2) * 0.5f;
-        // Weights[1] = Math::Vec2(0.75f, 0.75f) - Math::Vec2(CellDifference.x - 1.0f, CellDifference.y - 1.0f).Pow(2);
-        // Weights[2] = Math::Vec2(CellDifference.x - 0.5f, CellDifference.y - 0.5f).Pow(2) * 0.5f;
-
-        Weights[0] = Math::Vec2();
-        Weights[1] = Math::Vec2(1.0f, 1.0f);
-        Weights[2] = Math::Vec2();
+        Weights[0] = Math::Vec2(1.5f - CellDifference.x, 1.5f - CellDifference.y).Pow(2) * 0.5f;
+        Weights[1] = Math::Vec2(0.75f, 0.75f) - Math::Vec2(CellDifference.x - 1.0f, CellDifference.y - 1.0f).Pow(2);
+        Weights[2] = Math::Vec2(CellDifference.x - 0.5f, CellDifference.y - 0.5f).Pow(2) * 0.5f;
 
         for (int x = 0; x < 3; x++)
         {
@@ -183,7 +176,7 @@ void MPMSolver::ParticleToGrid(const std::vector<ParticleRenderData>& Particles,
 
                 GridCell& Cell = Grid[Index];
                 Cell.VelocityMass.w += ParticleData[ParticleIndex].Mass * Weight;
-                Cell.VelocityMass += (Momentum)*Weight;
+                Cell.VelocityMass += (Momentum + AffineByDistance) * Weight;
             }
         }
         ParticleIndex++;
@@ -203,12 +196,9 @@ void MPMSolver::GridToParticle(std::vector<ParticleRenderData>& Particles, float
         Math::Vec2 CellDifference = Math::Vec2(Particle.Position.x * InvDx - CellIndex.x, Particle.Position.y * InvDx - CellIndex.y);
 
         // Precalculate quadratic weight coefficients
-        // Weights[0] = Math::Vec2(1.5f - CellDifference.x, 1.5f - CellDifference.y).Pow(2) * 0.5f;
-        // Weights[1] = Math::Vec2(0.75f, 0.75f) - Math::Vec2(CellDifference.x - 1.0f, CellDifference.y - 1.0f).Pow(2);
-        // Weights[2] = Math::Vec2(CellDifference.x - 0.5f, CellDifference.y - 0.5f).Pow(2) * 0.5f;
-        Weights[0] = Math::Vec2();
-        Weights[1] = Math::Vec2(1.0f, 1.0f);
-        Weights[2] = Math::Vec2();
+        Weights[0] = Math::Vec2(1.5f - CellDifference.x, 1.5f - CellDifference.y).Pow(2) * 0.5f;
+        Weights[1] = Math::Vec2(0.75f, 0.75f) - Math::Vec2(CellDifference.x - 1.0f, CellDifference.y - 1.0f).Pow(2);
+        Weights[2] = Math::Vec2(CellDifference.x - 0.5f, CellDifference.y - 0.5f).Pow(2) * 0.5f;
         Math::Matrix4x4 B;
         for (int x = 0; x < 3; x++)
         {

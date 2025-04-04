@@ -2,8 +2,7 @@
 
 #include "ObjectRenderer.h"
 #include <memory>
-
-#define PARTICLE_COUNT 100000
+#include <unordered_map>
 
 class Renderer;
 template <typename T>
@@ -11,18 +10,19 @@ class PrimitiveObject;
 class Sphere;
 class Allocation;
 
-class MPMSolver;
+class IFluidSolver;
+struct ParticleRenderData;
 
-struct alignas(Math::Vec4) ParticleRenderData
+enum FluidSolver
 {
-    Math::Vec4 Position;
-    Math::Vec4 Velocity;
+    MPMCPUSolver,
+    MPMGPUSolver
 };
 
 class FluidObject : public ObjectRenderer
 {
 public:
-    FluidObject();
+    FluidObject(int NumParticles, float BoundingBoxSize, FluidSolver SolverType);
     ~FluidObject();
     void CreateBuffers(Renderer* RenderEngineIn);
     void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, const Math::Matrix& ViewMatrix);
@@ -31,13 +31,13 @@ public:
     virtual void RecompileShaders(ShaderCompiler& Compiler) override;
 
 private:
-    bool UseCPU = true;
+    bool UseCPU = false;
     std::vector<ParticleRenderData> Particles;
     PrimitiveObject<Sphere>* SphereRenderer;
     std::unique_ptr<Allocation> HeapAllocation;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineState;
 
-    MPMSolver* Solver;
+    IFluidSolver* Solver;
 
     Renderer* RenderEngine;
 

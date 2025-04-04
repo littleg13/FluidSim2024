@@ -247,7 +247,7 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     D3D12Renderer->SetCurrentView(MainView);
     Sphere::GenerateSphereData();
 
-    FluidObject* Fluid = new FluidObject();
+    FluidObject* Fluid = new FluidObject(10000, 1.0f, FluidSolver::MPMGPUSolver);
     Fluid->CreateBuffers(D3D12Renderer);
     MainScene->AddObject(Fluid);
 

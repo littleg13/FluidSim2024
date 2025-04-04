@@ -21,24 +21,28 @@ ShaderDesc FluidFragmentShader = {
     L"ps_6_0",
     L"main"};
 
-FluidObject::FluidObject()
+FluidObject::FluidObject(int NumParticles, float BoundingBoxSize, FluidSolver SolverType)
 {
-    int Rows = std::sqrt(PARTICLE_COUNT);
-    float Delta = 0.8f / float(Rows);
-    for (int i = 0; i < PARTICLE_COUNT; i++)
+    int Rows = std::sqrt(NumParticles);
+    float Delta = (BoundingBoxSize - BoundingBoxSize * 0.2f) / float(Rows);
+    for (int i = 0; i < NumParticles; i++)
     {
         float RandomOne = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
         float RandomTwo = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
-        ParticleRenderData Vert = {Math::Vec4((i % Rows) * Delta + 0.1f + RandomOne, (i / Rows) * Delta + 0.1f + RandomTwo, 0), Math::Vec4()};
+        ParticleRenderData Vert = {Math::Vec4((i % Rows) * Delta + BoundingBoxSize * 0.1f + RandomOne, (i / Rows) * Delta + BoundingBoxSize * 0.1f + RandomTwo, 0), Math::Vec4()};
         Particles.emplace_back(std::move(Vert));
     }
-    FluidParameters Params = {
-        64,
-        40.0f,
-        20.0f,
-        0.0020f, // 500 per second
-        1.0f};
-    Solver = new MPMSolver(Particles, Params);
+
+    switch (SolverType)
+    {
+    case MPMCPUSolver:
+        UseCPU = true;
+    case MPMGPUSolver:
+        // FluidParameters:              NumParticles, Resolution, Lambda, Mu, Timestep, Size
+        MPMSolver::FluidParameters Params = {NumParticles, 64, 40.0f, 20.0f, 0.0020f, BoundingBoxSize};
+        Solver = new MPMSolver(Particles, Params);
+        break;
+    }
 }
 
 FluidObject::~FluidObject()
@@ -64,6 +68,11 @@ void FluidObject::RecompileShaders(ShaderCompiler& Compiler)
 {
     Compiler.CompileShaderNonAsync(FluidVertexShader, true);
     Compiler.CompileShaderNonAsync(FluidFragmentShader, true);
+
+    if (!UseCPU)
+    {
+        Solver->RecompileShaders(Compiler);
+    }
 }
 
 void FluidObject::CreateBuffers(Renderer* RenderEngineIn)
@@ -81,7 +90,10 @@ void FluidObject::CreateBuffers(Renderer* RenderEngineIn)
     // Create the views
     HeapAllocation->CreateBufferUAV(InstanceBuffer, Particles.size(), sizeof(decltype(Particles.back())));
 
-    Solver->CreateBuffers(RenderEngineIn, CommandList, HeapAllocation.get());
+    if (!UseCPU)
+    {
+        Solver->CreateBuffers(RenderEngineIn, CommandList, HeapAllocation.get());
+    }
 
     uint32_t FenceValue = RenderEngine->ExecuteCommandList(CommandList);
     RenderEngine->WaitForFenceValue(FenceValue);
@@ -103,29 +115,37 @@ void FluidObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> Command
 
 void FluidObject::Update(float DeltaTime)
 {
-    if (HeapAllocation)
+    // CPU solve
+    if (UseCPU)
     {
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList = RenderEngine->GetCommandList();
-
-        CommandList->SetComputeRootSignature(RenderEngine->GetComputeRootSignature().Get());
-        ID3D12DescriptorHeap* Heaps[] = {HeapAllocation->Allocator->GetHeap()};
-        CommandList->SetDescriptorHeaps(1, Heaps);
-        CommandList->SetComputeRootDescriptorTable(0, HeapAllocation->GPUHandle);
-
-        Solver->GPUSolve(RenderEngine, CommandList, InstanceBuffer);
-
-        RenderEngine->UAVBarrier(CommandList, InstanceBuffer.Get());
-        RenderEngine->ExecuteCommandList(CommandList);
-        RenderEngine->Flush();
+        Solver->CPUSolve(Particles, DeltaTime);
+        if (InstanceBuffer && InstanceUploadBuffer)
+        {
+            Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList = RenderEngine->GetCommandList();
+            RenderEngine->TransitionBarrier(CommandList, InstanceBuffer.Get(), D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_STATE_COMMON);
+            RenderEngine->UploadDefaultBufferResource(CommandList, InstanceBuffer, InstanceUploadBuffer, Particles.size(), sizeof(decltype(Particles.back())), Particles.data(), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+            RenderEngine->TransitionBarrier(CommandList, InstanceBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+            uint32_t FenceValue = RenderEngine->ExecuteCommandList(CommandList);
+            RenderEngine->WaitForFenceValue(FenceValue);
+        }
     }
-    // Solver->CPUSolve(Particles, DeltaTime);
-    // if (InstanceBuffer && InstanceUploadBuffer)
-    // {
-    //     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList = RenderEngine->GetCommandList();
-    //     RenderEngine->TransitionBarrier(CommandList, InstanceBuffer.Get(), D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_STATE_COMMON);
-    //     RenderEngine->UploadDefaultBufferResource(CommandList, InstanceBuffer, InstanceUploadBuffer, Particles.size(), sizeof(decltype(Particles.back())), Particles.data(), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    //     RenderEngine->TransitionBarrier(CommandList, InstanceBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-    //     uint32_t FenceValue = RenderEngine->ExecuteCommandList(CommandList);
-    //     RenderEngine->WaitForFenceValue(FenceValue);
-    // }
+    // GPU solve
+    else
+    {
+        if (HeapAllocation)
+        {
+            Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList = RenderEngine->GetCommandList();
+
+            CommandList->SetComputeRootSignature(RenderEngine->GetComputeRootSignature().Get());
+            ID3D12DescriptorHeap* Heaps[] = {HeapAllocation->Allocator->GetHeap()};
+            CommandList->SetDescriptorHeaps(1, Heaps);
+            CommandList->SetComputeRootDescriptorTable(0, HeapAllocation->GPUHandle);
+
+            Solver->GPUSolve(RenderEngine, CommandList, InstanceBuffer);
+
+            RenderEngine->UAVBarrier(CommandList, InstanceBuffer.Get());
+            RenderEngine->ExecuteCommandList(CommandList);
+            RenderEngine->Flush();
+        }
+    }
 }
