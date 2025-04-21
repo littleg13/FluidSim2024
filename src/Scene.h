@@ -25,6 +25,8 @@ public:
     void AddObject(ObjectRenderer* Object);
     void ReloadShaders();
 
+    void HandleKeyPress(uint64_t wParam, bool isRepeat);
+
     void Update(double DeltaTime);
     void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, const Math::Matrix& ViewMatrix);
 

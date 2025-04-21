@@ -24,9 +24,9 @@ public:
             return;
         }
 
-        const int Segments = 3;
-        const int Rings = 3;
-        const float Radius = 0.005f;
+        const int Segments = 6;
+        const int Rings = 6;
+        const float Radius = 0.01f;
 
         // Generate vertices
         for (int ring = 0; ring <= Rings; ring++)

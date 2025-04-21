@@ -23,6 +23,17 @@ void Scene::AddObject(ObjectRenderer* Object)
     }
 }
 
+void Scene::HandleKeyPress(uint64_t wParam, bool isRepeat)
+{
+    for (auto& [typeID, renderGroup] : RenderGroups)
+    {
+        for (auto object : renderGroup.Objects)
+        {
+            object->HandleKeyPress(wParam, isRepeat);
+        }
+    }
+}
+
 void Scene::ReloadShaders()
 {
     for (auto& [typeID, renderGroup] : RenderGroups)

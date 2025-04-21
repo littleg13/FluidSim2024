@@ -23,6 +23,7 @@ struct alignas(Math::Vec4) ParticleRenderData
 class IFluidSolver
 {
 public:
+    virtual void Reset(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList) = 0;
     virtual void CPUSolve(std::vector<ParticleRenderData>& Particles, float DeltaTime) = 0;
     virtual void GPUSolve(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, Microsoft::WRL::ComPtr<ID3D12Resource> ParticleBuffer) = 0;
 

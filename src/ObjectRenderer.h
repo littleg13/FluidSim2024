@@ -23,6 +23,8 @@ public:
 
     virtual void Update(float DeltaTime) {};
 
+    virtual void HandleKeyPress(uint64_t wParam, bool isRepeat) {};
+
     void ApplyRotation(const Math::Matrix& Transform);
     void ApplyTranslation(const Math::Vec4& Transform);
     void SetTranslation(const Math::Vec4& Transform);

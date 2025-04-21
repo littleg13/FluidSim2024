@@ -4,6 +4,7 @@
 #include <string>
 
 #include "Renderer.h"
+#include "Scene.h"
 #include "View.h"
 
 Controller::Controller(Renderer* renderer)
@@ -19,6 +20,12 @@ Controller::~Controller()
     {
         delete view;
     }
+}
+
+void Controller::SetCurrentScene(Scene* NewScene)
+{
+    CurrentScene = NewScene;
+    D3D12Renderer->SetCurrentScene(NewScene);
 }
 
 View* Controller::AddView()
@@ -78,6 +85,10 @@ void Controller::HandleKeyPress(uint64_t wParam, bool isRepeat)
             ViewVel.x += VIEW_MOVE_SPEED;
             break;
         }
+    }
+    if (CurrentScene)
+    {
+        CurrentScene->HandleKeyPress(wParam, isRepeat);
     }
 }
 

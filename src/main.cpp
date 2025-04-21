@@ -243,11 +243,10 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     Controller* ViewController = new Controller(D3D12Renderer);
     View* MainView = ViewController->GetCurrentView();
 
-    D3D12Renderer->SetCurrentScene(MainScene);
+    ViewController->SetCurrentScene(MainScene);
     D3D12Renderer->SetCurrentView(MainView);
-    Sphere::GenerateSphereData();
 
-    FluidObject* Fluid = new FluidObject(10000, 1.0f, FluidSolver::MPMGPUSolver);
+    FluidObject* Fluid = new FluidObject(100000, 1.0f, FluidSolver::MPMGPUSolver);
     Fluid->CreateBuffers(D3D12Renderer);
     MainScene->AddObject(Fluid);
 

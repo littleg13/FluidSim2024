@@ -22,24 +22,16 @@ ShaderDesc FluidFragmentShader = {
     L"main"};
 
 FluidObject::FluidObject(int NumParticles, float BoundingBoxSize, FluidSolver SolverType)
+    : NumParticles(NumParticles), BoundingBoxSize(BoundingBoxSize)
 {
-    int Rows = std::sqrt(NumParticles);
-    float Delta = (BoundingBoxSize - BoundingBoxSize * 0.2f) / float(Rows);
-    for (int i = 0; i < NumParticles; i++)
-    {
-        float RandomOne = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
-        float RandomTwo = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
-        ParticleRenderData Vert = {Math::Vec4((i % Rows) * Delta + BoundingBoxSize * 0.1f + RandomOne, (i / Rows) * Delta + BoundingBoxSize * 0.1f + RandomTwo, 0), Math::Vec4()};
-        Particles.emplace_back(std::move(Vert));
-    }
-
+    ResetParticles();
     switch (SolverType)
     {
     case MPMCPUSolver:
         UseCPU = true;
     case MPMGPUSolver:
         // FluidParameters:              NumParticles, Resolution, Lambda, Mu, Timestep, Size
-        MPMSolver::FluidParameters Params = {NumParticles, 64, 40.0f, 20.0f, 0.0020f, BoundingBoxSize};
+        MPMSolver::FluidParameters Params = {NumParticles, 128, 40.0f, 20.0f, 0.0020f, BoundingBoxSize};
         Solver = new MPMSolver(Particles, Params);
         break;
     }
@@ -72,6 +64,49 @@ void FluidObject::RecompileShaders(ShaderCompiler& Compiler)
     if (!UseCPU)
     {
         Solver->RecompileShaders(Compiler);
+    }
+}
+
+void FluidObject::ResetParticles()
+{
+    Particles.clear();
+    int Rows = std::sqrt(NumParticles);
+    float Delta = (BoundingBoxSize - BoundingBoxSize * 0.2f) / float(Rows);
+    for (int i = 0; i < NumParticles; i++)
+    {
+        float RandomOne = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
+        float RandomTwo = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
+        ParticleRenderData Vert = {Math::Vec4((i % Rows) * Delta + BoundingBoxSize * 0.1f + RandomOne, (i / Rows) * Delta + BoundingBoxSize * 0.1f + RandomTwo, 0), Math::Vec4()};
+        Particles.emplace_back(std::move(Vert));
+    }
+}
+
+void FluidObject::Reset()
+{
+    ResetParticles();
+
+    // Reupload the buffer
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList = RenderEngine->GetCommandList();
+    RenderEngine->TransitionBarrier(CommandList, InstanceBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+    RenderEngine->UploadDefaultBufferResource(CommandList, InstanceBuffer, InstanceUploadBuffer, Particles.size(), sizeof(decltype(Particles.back())), Particles.data(), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    RenderEngine->TransitionBarrier(CommandList, InstanceBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+    Solver->Reset(RenderEngine, CommandList);
+
+    uint32_t FenceValue = RenderEngine->ExecuteCommandList(CommandList);
+    RenderEngine->WaitForFenceValue(FenceValue);
+}
+
+void FluidObject::HandleKeyPress(uint64_t wParam, bool isRepeat)
+{
+    if (!isRepeat)
+    {
+        switch (wParam)
+        {
+        case 0x52: // R
+            Reset();
+            break;
+        }
     }
 }
 

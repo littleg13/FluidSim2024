@@ -17,8 +17,8 @@ struct alignas(Math::Vec4) ParticlePhysicsData
 {
     Math::Matrix C;
     Math::Matrix DeformGradient = Math::Identity;
-    float Mass = 0.5f;
-    float InitialVolume = 3.0f;
+    float Mass = 1.0f;
+    float InitialVolume = 1.0f;
     float Padding1, Padding2;
 };
 
@@ -44,6 +44,8 @@ public:
     };
 
     MPMSolver(std::vector<ParticleRenderData>& Particles, FluidParameters& FluidParams);
+
+    virtual void Reset(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList) override;
 
     virtual void CPUSolve(std::vector<ParticleRenderData>& Particles, float DeltaTime) override;
     virtual void GPUSolve(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, Microsoft::WRL::ComPtr<ID3D12Resource> ParticleBuffer) override;

@@ -6,6 +6,7 @@
 
 class View;
 class Renderer;
+class Scene;
 
 #define MOUSE_SENSITIVITY 0.1
 #define VIEW_MOVE_SPEED 8
@@ -19,6 +20,8 @@ public:
     View* AddView();
     View* GetCurrentView();
 
+    void SetCurrentScene(Scene* NewScene);
+
     void Update(double DeltaTime);
 
     void HandleMouseMove(uint64_t wParam, int X, int Y);
@@ -29,6 +32,7 @@ public:
 
 private:
     Renderer* D3D12Renderer;
+    Scene* CurrentScene;
     std::vector<View*> Views;
     int CurrentViewIndex = 0;
 

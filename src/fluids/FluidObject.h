@@ -24,11 +24,17 @@ class FluidObject : public ObjectRenderer
 public:
     FluidObject(int NumParticles, float BoundingBoxSize, FluidSolver SolverType);
     ~FluidObject();
-    void CreateBuffers(Renderer* RenderEngineIn);
-    void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, const Math::Matrix& ViewMatrix);
-    virtual void Update(float DeltaTime);
+
+    void ResetParticles();
+    void Reset();
+
+    virtual void CreateBuffers(Renderer* RenderEngineIn);
+    virtual void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, const Math::Matrix& ViewMatrix) override;
+    virtual void Update(float DeltaTime) override;
     virtual Microsoft::WRL::ComPtr<ID3D12PipelineState> CreatePipelineStateObject(ID3D12DevicePtr D3D12Device, ShaderCompiler& Compiler) override;
     virtual void RecompileShaders(ShaderCompiler& Compiler) override;
+
+    virtual void HandleKeyPress(uint64_t wParam, bool isRepeat) override;
 
 private:
     bool UseCPU = false;
@@ -44,4 +50,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> InstanceBuffer;
     Microsoft::WRL::ComPtr<ID3D12Resource> InstanceUploadBuffer;
     D3D12_VERTEX_BUFFER_VIEW InstanceBufferView;
+
+    int NumParticles;
+    float BoundingBoxSize;
 };
