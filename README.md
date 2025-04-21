@@ -54,6 +54,7 @@ After building the project:
 2. Use the following controls:
 - WASD: Camera movement
 - Mouse: Look around
+- R: Reset scene
 - F5: Reload shaders
 - ESC: Exit the application
 
