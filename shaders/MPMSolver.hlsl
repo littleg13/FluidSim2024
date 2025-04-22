@@ -3,6 +3,10 @@
 
 #define IDENTITY_MATRIX float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 
+#define EOS_STIFFNESS 1000.0f
+#define EOS_POWER 7
+#define DYNAMIC_VISCOSITY 0.0f
+
 struct ParticleRenderData
 {
     float4 Position;
@@ -108,6 +112,21 @@ matrix NeoHookeanStress(ParticleRenderData Particle, ParticlePhysicsData Physics
     return (P * DeformTranspose) * -(PhysicsData.InitialVolume * 4 * Fluid.InvDx * Fluid.InvDx);
 }
 
+matrix ConstitutiveStress(ParticleRenderData Particle, ParticlePhysicsData PhysicsData)
+{
+    float Volume = determinant(PhysicsData.DeformGradient);
+    float Density = PhysicsData.Mass / Volume;
+    float Pressure = max(0.0f, EOS_STIFFNESS * (pow(PhysicsData.InitialVolume / Volume, EOS_POWER) - 1.0f));
+    matrix Stress = float4x4(
+        -Pressure, 0.0f, 0.0f, 0.0f,
+        0.0f, -Pressure, 0.0f, 0.0f,
+        0.0f, 0.0f, -Pressure, 0.0f,
+        0.0f, 0.0f, 0.0f, -Pressure);
+    matrix Strain = PhysicsData.C + transpose(PhysicsData.C);
+    Stress += DYNAMIC_VISCOSITY * Strain;
+    return -PhysicsData.InitialVolume * Stress * 4 * Fluid.InvDx * Fluid.InvDx;
+}
+
 // clang-format off
 [numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)] 
 void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
@@ -138,17 +157,17 @@ void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
                 int GridIndex = (CellIndex.x + x) * Fluid.GridResolution + CellIndex.y + y;
                 float4 WeightedVelocity = Grid[GridIndex].VelocityMass * Weight;
 
-                B += outerProduct(WeightedVelocity, CellDistance) * Fluid.InvDx;
+                B += outerProduct(WeightedVelocity, CellDistance);
 
                 Particles[Index].Velocity.xyz += WeightedVelocity.xyz;
             }
         }
-        ParticleData[Index].C = B * 4;
+        ParticleData[Index].C = B * 4 * Fluid.InvDx;
 
         Particles[Index].Position += Particles[Index].Velocity * Fluid.DeltaTime;
 
-        Particles[Index].Position.x = min(max(Particles[Index].Position.x, Fluid.Dx), Fluid.GridSize - Fluid.Dx);
-        Particles[Index].Position.y = min(max(Particles[Index].Position.y, Fluid.Dx), Fluid.GridSize - Fluid.Dx);
+        Particles[Index].Position.x = min(max(Particles[Index].Position.x, Fluid.Dx), Fluid.GridSize - 2 * Fluid.Dx);
+        Particles[Index].Position.y = min(max(Particles[Index].Position.y, Fluid.Dx), Fluid.GridSize - 2 * Fluid.Dx);
 
         ParticleData[Index].DeformGradient = (IDENTITY_MATRIX + (ParticleData[Index].C * Fluid.DeltaTime)) * ParticleData[Index].DeformGradient;
     }
@@ -173,14 +192,14 @@ void GridUpdate(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
             int X = Index / Fluid.GridResolution;
             int Y = Index % Fluid.GridResolution;
 
-            if (X < 2 || X > Fluid.GridResolution - 3)
+            if (X < 2 || X > Fluid.GridResolution - 2)
             {
-                Grid[Index].VelocityMass.x = 0.0f;
+                Grid[Index].VelocityMass.x *= 0.001f;
             }
 
-            if (Y < 2 || Y > Fluid.GridResolution - 3)
+            if (Y < 2 || Y > Fluid.GridResolution - 2)
             {
-                Grid[Index].VelocityMass.y = 0.0f;
+                Grid[Index].VelocityMass.y *= 0.001f;
             }
         }
     }
@@ -193,7 +212,7 @@ void ParticleToGrid(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
     if (Index < Fluid.NumParticles)
     {
         ParticleRenderData Particle = Particles[Index];
-        matrix Affine = NeoHookeanStress(Particle, ParticleData[Index]) * Fluid.DeltaTime + (ParticleData[Index].C * ParticleData[Index].Mass);
+        matrix Affine = ConstitutiveStress(Particle, ParticleData[Index]) * Fluid.DeltaTime + (ParticleData[Index].C * ParticleData[Index].Mass);
         //matrix Affine = (ParticleData[Index].C * ParticleData[Index].Mass);
         int2 CellIndex = int2((Particle.Position.xy * Fluid.InvDx) - 0.5f);
         float2 CellDifference = (Particle.Position.xy * Fluid.InvDx) - CellIndex;
