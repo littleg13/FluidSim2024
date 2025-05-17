@@ -1,5 +1,6 @@
 #ifndef MATH_H
 #define MATH_H
+#include <string>
 namespace Math
 {
 #define PI 3.14159265358979323846
@@ -37,7 +38,7 @@ namespace Math
         Matrix4x4& operator+=(const Matrix4x4& B);
         Matrix4x4 operator*(const Matrix4x4& B) const;
         Matrix4x4 operator*(const float Scalar) const;
-        Vec4 operator*(const Vec4& B);
+        Vec4 operator*(const Vec4& B) const;
         Vec4 GetRow(int I);
         Vec4 GetColumn(int I);
     };
@@ -57,7 +58,7 @@ namespace Math
     Matrix4x4 TransformationMatrix(const Matrix4x4& Rotation, const Vec4& Translation, const Vec4& Scale);
     Matrix4x4 TransformationMatrix(const Matrix4x4& Rotation, const Vec4& Translation);
 
-    struct Vec4
+    struct alignas(float) Vec4
     {
         float x, y, z;
         float w = 1.0f;
@@ -76,6 +77,11 @@ namespace Math
         Vec4& operator+=(const Vec4& B);
         Vec4 operator*(const Matrix4x4& B) const;
         Vec4 operator*(float Scalar) const;
+        Vec4& operator/=(float Scalar);
+        operator std::string() const
+        {
+            return "(" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ", " + std::to_string(w) + ")";
+        };
     };
 
     template <typename T = float>

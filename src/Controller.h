@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util/3DMath.h"
+#include "util/Singleton.h"
 #include <stdint.h>
 #include <vector>
 
@@ -11,7 +12,7 @@ class Scene;
 #define MOUSE_SENSITIVITY 0.1
 #define VIEW_MOVE_SPEED 8
 
-class Controller
+class Controller : public Singleton<Controller>
 {
 public:
     Controller(Renderer* renderer);
@@ -19,6 +20,9 @@ public:
 
     View* AddView();
     View* GetCurrentView();
+
+    const Math::Vec4& GetProjectedMousePosition();
+    bool IsRightMouseDown();
 
     void SetCurrentScene(Scene* NewScene);
 
@@ -37,6 +41,8 @@ private:
     int CurrentViewIndex = 0;
 
     int CurrentMouseX, CurrentMouseY = 0;
+    Math::Vec4 ProjectedMousePos;
     bool Panning = false;
+    bool Grabbing = false;
     Math::Vec4 ViewVel = Math::Vec4(0, 0, 0);
 };

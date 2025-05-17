@@ -38,6 +38,7 @@ public:
     bool IsInitialized();
     void Render();
     void Resize(uint32_t Width, uint32_t Height);
+    Math::Vec2<int32_t> GetClientDimensions();
     void TransitionBarrier(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, ID3D12Resource* Resource, D3D12_RESOURCE_STATES StateBefore, D3D12_RESOURCE_STATES StateAfter, UINT Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
     void UAVBarrier(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList, ID3D12Resource* Resource);
     ShaderCompiler& GetCompiler();
@@ -60,6 +61,7 @@ public:
     void Flush();
 
     Scene* GetCurrentScene();
+    const Math::Matrix& GetInversePerspective();
     void SetCurrentScene(Scene* NewScene);
     void SetCurrentView(View* NewView);
 
@@ -111,6 +113,7 @@ private:
     std::queue<CommandAllocatorTracker> TrackedCommandAllocators;
 
     Math::Matrix PerspectiveMatrix;
+    Math::Matrix InvPerspectiveMatrix;
     View* CurrentView;
 
     uint32_t ClientWidth;

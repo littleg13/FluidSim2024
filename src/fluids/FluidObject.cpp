@@ -1,5 +1,6 @@
 #include "fluids/FluidObject.h"
 
+#include "Controller.h"
 #include "DescriptorHeapAllocator.h"
 #include "PSOBuilder.h"
 #include "Renderer.h"
@@ -31,7 +32,7 @@ FluidObject::FluidObject(int NumParticles, float BoundingBoxSize, FluidSolver So
         UseCPU = true;
     case MPMGPUSolver:
         // FluidParameters:              NumParticles, Resolution, Lambda, Mu, Timestep, Size
-        MPMSolver::FluidParameters Params = {NumParticles, 128, 40.0f, 20.0f, 0.0020f, BoundingBoxSize};
+        MPMSolver::FluidParameters Params = {NumParticles, 64, 40.0f, 20.0f, 0.0020f, BoundingBoxSize};
         Solver = new MPMSolver(Particles, Params);
         break;
     }
@@ -70,14 +71,21 @@ void FluidObject::RecompileShaders(ShaderCompiler& Compiler)
 void FluidObject::ResetParticles()
 {
     Particles.clear();
-    int Rows = std::sqrt(NumParticles);
-    float Delta = (BoundingBoxSize - BoundingBoxSize * 0.2f) / float(Rows);
-    for (int i = 0; i < NumParticles; i++)
+    int Rows = std::cbrt(NumParticles);
+    int RowsSquared = Rows * Rows;
+    float Delta = (BoundingBoxSize - BoundingBoxSize * 0.1f) / float(Rows);
+    for (int i = 0; i < Rows; i++)
     {
-        float RandomOne = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
-        float RandomTwo = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
-        ParticleRenderData Vert = {Math::Vec4((i % Rows) * Delta + BoundingBoxSize * 0.1f + RandomOne, (i / Rows) * Delta + BoundingBoxSize * 0.1f + RandomTwo, 0), Math::Vec4()};
-        Particles.emplace_back(std::move(Vert));
+        for (int j = 0; j < Rows; j++)
+        {
+            for (int k = 0; k < Rows; k++)
+            {
+                float RandomOne = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
+                float RandomTwo = Delta * ((static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX)) - 0.5f);
+                ParticleRenderData Vert = {Math::Vec4(i * Delta + BoundingBoxSize * 0.1f + RandomOne, j * Delta + BoundingBoxSize * 0.1f + RandomTwo, k * Delta + BoundingBoxSize * 0.1f + RandomOne), Math::Vec4()};
+                Particles.emplace_back(std::move(Vert));
+            }
+        }
     }
 }
 
@@ -169,12 +177,19 @@ void FluidObject::Update(float DeltaTime)
     {
         if (HeapAllocation)
         {
+
             Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList = RenderEngine->GetCommandList();
 
             CommandList->SetComputeRootSignature(RenderEngine->GetComputeRootSignature().Get());
+
+            Controller* ViewController = Controller::GetInstance();
+            CommandList->SetComputeRoot32BitConstants(0, 3, &ViewController->GetProjectedMousePosition(), 0);
+            bool IsGrabbing = ViewController->IsRightMouseDown();
+            CommandList->SetComputeRoot32BitConstants(0, 1, &IsGrabbing, 3);
+
             ID3D12DescriptorHeap* Heaps[] = {HeapAllocation->Allocator->GetHeap()};
             CommandList->SetDescriptorHeaps(1, Heaps);
-            CommandList->SetComputeRootDescriptorTable(0, HeapAllocation->GPUHandle);
+            CommandList->SetComputeRootDescriptorTable(1, HeapAllocation->GPUHandle);
 
             Solver->GPUSolve(RenderEngine, CommandList, InstanceBuffer);
 

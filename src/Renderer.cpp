@@ -246,6 +246,11 @@ Scene* Renderer::GetCurrentScene()
     return CurrentScene;
 }
 
+const Math::Matrix& Renderer::GetInversePerspective()
+{
+    return InvPerspectiveMatrix;
+}
+
 void Renderer::SetCurrentScene(Scene* NewScene)
 {
     CurrentScene = NewScene;
@@ -262,6 +267,7 @@ void Renderer::SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignatu
 
     float AspectRatio = ClientWidth / static_cast<float>(ClientHeight);
     PerspectiveMatrix = std::move(Math::PerspectiveMatrix(90.0f, AspectRatio, 0.1f, 100.0f));
+    InvPerspectiveMatrix = PerspectiveMatrix.Inverse();
 }
 
 void Renderer::SetComputeRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> RootSignature)
@@ -295,6 +301,7 @@ void Renderer::Resize(uint32_t Width, uint32_t Height)
         Viewport = D3D12_VIEWPORT{0.0f, 0.0f, static_cast<float>(Width), static_cast<float>(Height), D3D12_MIN_DEPTH, D3D12_MAX_DEPTH};
         float AspectRatio = ClientWidth / static_cast<float>(ClientHeight);
         PerspectiveMatrix = std::move(Math::PerspectiveMatrix(90.0f, AspectRatio, 0.1f, 10.0f));
+        InvPerspectiveMatrix = PerspectiveMatrix.Inverse();
 
         // Flush
         RenderUtils::CreateDialogAndThrowIfFailed(D3D12CommandQueue->Signal(D3D12Fence.Get(), ++FenceValue));
@@ -315,6 +322,11 @@ void Renderer::Resize(uint32_t Width, uint32_t Height)
         UpdateRenderTargetViews(D3D12Device, DxgiSwapChain, D3D12DescriptorHeap, BackBuffers);
         CreateDepthBuffer();
     }
+}
+
+Math::Vec2<int32_t> Renderer::GetClientDimensions()
+{
+    return Math::Vec2<int32_t>(ClientWidth, ClientHeight);
 }
 
 void Renderer::CreateDepthBuffer()

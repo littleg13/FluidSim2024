@@ -33,7 +33,7 @@ ShaderDesc MPMClearGridComputeShader = {
 MPMSolver::MPMSolver(std::vector<ParticleRenderData>& Particles, FluidParameters& FluidParams)
     : GridResolution(FluidParams.GridResolution), NumParticles(Particles.size()), Size(FluidParams.GridSize), FluidValues(FluidParams)
 {
-    Grid = std::vector<GridCell>(GridResolution * GridResolution);
+    Grid = std::vector<GridCell>(GridResolution * GridResolution * GridResolution);
     ParticleData = std::vector<ParticlePhysicsData>(NumParticles);
 
     DX = FluidParams.Dx;
@@ -42,14 +42,14 @@ MPMSolver::MPMSolver(std::vector<ParticleRenderData>& Particles, FluidParameters
 
 void MPMSolver::Reset(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> CommandList)
 {
-    Grid = std::vector<GridCell>(GridResolution * GridResolution);
+    Grid = std::vector<GridCell>(GridResolution * GridResolution * GridResolution);
     ParticleData = std::vector<ParticlePhysicsData>(NumParticles);
     // We just need to copy from the original upload buffers as we have not touched them
     if (ParticleDataBuffer && ParticleDataUploadBuffer)
     {
-        RenderEngine->TransitionBarrier(CommandList, GridBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+        RenderEngine->TransitionBarrier(CommandList, ParticleDataBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
         CommandList->CopyBufferRegion(ParticleDataBuffer.Get(), 0, ParticleDataUploadBuffer.Get(), 0, sizeof(decltype(ParticleData.back())) * ParticleData.size());
-        RenderEngine->TransitionBarrier(CommandList, GridBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        RenderEngine->TransitionBarrier(CommandList, ParticleDataBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
     if (GridBuffer && GridUploadBuffer)
     {
@@ -59,9 +59,9 @@ void MPMSolver::Reset(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12Graph
     }
     if (FluidParamBuffer && FluidParamUploadBuffer)
     {
-        RenderEngine->TransitionBarrier(CommandList, GridBuffer.Get(), D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_STATE_COPY_DEST);
+        RenderEngine->TransitionBarrier(CommandList, FluidParamBuffer.Get(), D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_STATE_COPY_DEST);
         CommandList->CopyBufferRegion(FluidParamBuffer.Get(), 0, FluidParamUploadBuffer.Get(), 0, 256);
-        RenderEngine->TransitionBarrier(CommandList, GridBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+        RenderEngine->TransitionBarrier(CommandList, FluidParamBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     }
 }
 
@@ -117,6 +117,7 @@ void MPMSolver::GPUSolve(Renderer* RenderEngine, Microsoft::WRL::ComPtr<ID3D12Gr
     {
         CommandList->SetPipelineState(PipelineStates[i].Get());
         CommandList->Dispatch(DispatchSizes[i], 1, 1);
+        // Could condense these to one barrier
         RenderEngine->UAVBarrier(CommandList, GridBuffer.Get());
         RenderEngine->UAVBarrier(CommandList, ParticleDataBuffer.Get());
         RenderEngine->UAVBarrier(CommandList, ParticleBuffer.Get());

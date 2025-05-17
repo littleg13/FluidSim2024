@@ -3,9 +3,18 @@
 
 #define IDENTITY_MATRIX float4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 
-#define EOS_STIFFNESS 1000.0f
+#define EOS_STIFFNESS 80000.0f
 #define EOS_POWER 7
 #define DYNAMIC_VISCOSITY 0.0f
+#define MOUSE_DOWN true
+#define MOUSE_POSITION float4(0.5f, 0.5f, 0.5f, 0.0f)
+#define MOUSE_GRAB_RADIUS 0.75f
+
+struct SceneData
+{
+    float3 MousePosition;
+    bool MouseDown;
+};
 
 struct ParticleRenderData
 {
@@ -19,19 +28,22 @@ struct ParticlePhysicsData
     matrix DeformGradient;
     float Mass;
     float InitialVolume;
-    float Padding1, Padding2;
+    float J;
+    float Padding1;
 };
 
 struct FluidParameters
 {
     uint NumParticles;
     uint GridResolution;
+    uint NumGridCells;
     float Dx;
     float InvDx;
     float ElasticMu;
     float ElasticLamda;
     float DeltaTime;
     float GridSize;
+    float Padding1, Padding2, Padding3;
 };
 
 struct GridCell
@@ -44,7 +56,8 @@ RWStructuredBuffer<ParticleRenderData> Particles : register(u0);
 RWStructuredBuffer<ParticlePhysicsData> ParticleData : register(u1);
 // xyz = Velocity, w = mass
 RWStructuredBuffer<GridCell> Grid : register(u2);
-ConstantBuffer<FluidParameters> Fluid : register(b3);
+ConstantBuffer<SceneData> Scene : register(b0);
+ConstantBuffer<FluidParameters> Fluid : register(b1);
 
 uint GetThreadIndex(uint ThreadIndex, uint3 GroupId)
 {
@@ -112,19 +125,30 @@ matrix NeoHookeanStress(ParticleRenderData Particle, ParticlePhysicsData Physics
     return (P * DeformTranspose) * -(PhysicsData.InitialVolume * 4 * Fluid.InvDx * Fluid.InvDx);
 }
 
-matrix ConstitutiveStress(ParticleRenderData Particle, ParticlePhysicsData PhysicsData)
+double4x4 ConstitutiveStress(ParticleRenderData Particle, ParticlePhysicsData PhysicsData)
 {
-    float Volume = determinant(PhysicsData.DeformGradient);
-    float Density = PhysicsData.Mass / Volume;
-    float Pressure = max(0.0f, EOS_STIFFNESS * (pow(PhysicsData.InitialVolume / Volume, EOS_POWER) - 1.0f));
-    matrix Stress = float4x4(
+    double Pressure = max(0.0f, EOS_STIFFNESS * (pow(PhysicsData.J, -EOS_POWER) - 1.0f));
+    double4x4 Stress = double4x4(
         -Pressure, 0.0f, 0.0f, 0.0f,
         0.0f, -Pressure, 0.0f, 0.0f,
         0.0f, 0.0f, -Pressure, 0.0f,
         0.0f, 0.0f, 0.0f, -Pressure);
-    matrix Strain = PhysicsData.C + transpose(PhysicsData.C);
-    Stress += DYNAMIC_VISCOSITY * Strain;
-    return -PhysicsData.InitialVolume * Stress * 4 * Fluid.InvDx * Fluid.InvDx;
+    return -PhysicsData.InitialVolume * Stress * 4.0f * Fluid.InvDx * Fluid.DeltaTime;
+}
+
+float3 ApplyMouseInteraction(float4 Position)
+{
+    if (Scene.MouseDown)
+    {
+        float3 ToMouse = Scene.MousePosition - Position.xyz;
+        float Distance = length(ToMouse);
+        if (Distance < MOUSE_GRAB_RADIUS)
+        {
+            float NormalizationFactor = pow(Distance / MOUSE_GRAB_RADIUS, 8);
+            return normalize(ToMouse) * 0.1f * NormalizationFactor;
+        }
+    }
+    return float3(0.0f, 0.0f, 0.0f);
 }
 
 // clang-format off
@@ -136,11 +160,11 @@ void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
     {
         Particles[Index].Velocity = float4(0.0f, 0.0f, 0.0f, 0.0f);
         ParticleRenderData Particle = Particles[Index];
-        int2 CellIndex = int2((Particle.Position.xy * Fluid.InvDx) - 0.5f);
-        float2 CellDifference = (Particle.Position.xy * Fluid.InvDx) - CellIndex;
+        int3 CellIndex = int3((Particle.Position.xyz * Fluid.InvDx) - 0.5f);
+        float3 CellDifference = (Particle.Position.xyz * Fluid.InvDx) - CellIndex;
 
         // Precalculate quadratic weight coefficients
-        float2 Weights[3];
+        float3 Weights[3];
         Weights[0] = pow(1.5f - CellDifference, 2) * 0.5f;
         Weights[1] = 0.75f - pow(CellDifference - 1.0f, 2);
         Weights[2] = pow(CellDifference - 0.5f, 2) * 0.5f;
@@ -150,16 +174,19 @@ void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
         {
             for (int y = 0; y < 3; y++)
             {
-                float Weight = Weights[x].x * Weights[y].y;
+                for (int z = 0; z < 3; z++)
+                {   
+                    float Weight = Weights[x].x * Weights[y].y * Weights[z].z;
 
-                float4 CellDistance = float4(x - CellDifference.x, y - CellDifference.y, 0.0f, 0.0f) * Fluid.Dx;
+                    float4 CellDistance = float4(x - CellDifference.x, y - CellDifference.y, z - CellDifference.z, 0.0f) * Fluid.Dx;
 
-                int GridIndex = (CellIndex.x + x) * Fluid.GridResolution + CellIndex.y + y;
-                float4 WeightedVelocity = Grid[GridIndex].VelocityMass * Weight;
+                    int GridIndex = ((CellIndex.x + x) * Fluid.GridResolution + CellIndex.y + y) * Fluid.GridResolution + CellIndex.z + z;
+                    float4 WeightedVelocity = Grid[GridIndex].VelocityMass * Weight;
 
-                B += outerProduct(WeightedVelocity, CellDistance);
+                    B += outerProduct(WeightedVelocity, CellDistance);
 
-                Particles[Index].Velocity.xyz += WeightedVelocity.xyz;
+                    Particles[Index].Velocity.xyz += WeightedVelocity.xyz;
+                }
             }
         }
         ParticleData[Index].C = B * 4 * Fluid.InvDx;
@@ -168,8 +195,11 @@ void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
 
         Particles[Index].Position.x = min(max(Particles[Index].Position.x, Fluid.Dx), Fluid.GridSize - 2 * Fluid.Dx);
         Particles[Index].Position.y = min(max(Particles[Index].Position.y, Fluid.Dx), Fluid.GridSize - 2 * Fluid.Dx);
+        Particles[Index].Position.z = min(max(Particles[Index].Position.z, Fluid.Dx), Fluid.GridSize - 2 * Fluid.Dx);
 
-        ParticleData[Index].DeformGradient = (IDENTITY_MATRIX + (ParticleData[Index].C * Fluid.DeltaTime)) * ParticleData[Index].DeformGradient;
+        ParticleData[Index].C = (IDENTITY_MATRIX + (ParticleData[Index].C * Fluid.DeltaTime));
+        ParticleData[Index].J = ParticleData[Index].J * (ParticleData[Index].C[0][0] + ParticleData[Index].C[1][1] + ParticleData[Index].C[2][2] - 2);
+        Particles[Index].Velocity.xyz += ApplyMouseInteraction(Particles[Index].Position);
     }
 }
 
@@ -177,7 +207,7 @@ void GridToParticle(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
 void GridUpdate(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
 {
     uint Index = GetThreadIndex(ThreadIndex, GroupId);
-    if (Index < Fluid.GridResolution * Fluid.GridResolution)
+    if (Index < Fluid.NumGridCells)
     {
         Grid[Index].VelocityMass = Grid[Index].IntVelocityMass / 100000.0f;
         float4 Gravity = float4(0.0f, -9.8f * Fluid.DeltaTime, 0.0f, 0.0f);
@@ -189,8 +219,9 @@ void GridUpdate(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
             Grid[Index].VelocityMass += Gravity;
 
             // Apply Boundary Conditions
-            int X = Index / Fluid.GridResolution;
-            int Y = Index % Fluid.GridResolution;
+            int X = Index / (Fluid.GridResolution * Fluid.GridResolution);
+            int Y = (Index / Fluid.GridResolution) % Fluid.GridResolution;
+            int Z = Index % Fluid.GridResolution;
 
             if (X < 2 || X > Fluid.GridResolution - 2)
             {
@@ -200,6 +231,11 @@ void GridUpdate(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
             if (Y < 2 || Y > Fluid.GridResolution - 2)
             {
                 Grid[Index].VelocityMass.y *= 0.001f;
+            }
+
+            if (Z < 2 || Z > Fluid.GridResolution - 2)
+            {
+                Grid[Index].VelocityMass.z = 0.0f;
             }
         }
     }
@@ -212,13 +248,13 @@ void ParticleToGrid(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
     if (Index < Fluid.NumParticles)
     {
         ParticleRenderData Particle = Particles[Index];
-        matrix Affine = ConstitutiveStress(Particle, ParticleData[Index]) * Fluid.DeltaTime + (ParticleData[Index].C * ParticleData[Index].Mass);
+        double4x4 Affine = ConstitutiveStress(Particle, ParticleData[Index]) + (ParticleData[Index].C * ParticleData[Index].Mass);
         //matrix Affine = (ParticleData[Index].C * ParticleData[Index].Mass);
-        int2 CellIndex = int2((Particle.Position.xy * Fluid.InvDx) - 0.5f);
-        float2 CellDifference = (Particle.Position.xy * Fluid.InvDx) - CellIndex;
+        int3 CellIndex = int3((Particle.Position.xyz * Fluid.InvDx) - 0.5f);
+        float3 CellDifference = (Particle.Position.xyz * Fluid.InvDx) - CellIndex;
 
         // Precalculate quadratic weight coefficients
-        float2 Weights[3];
+        float3 Weights[3];
         Weights[0] = pow(1.5f - CellDifference, 2) * 0.5f;
         Weights[1] = 0.75f - pow(CellDifference - 1.0f, 2);
         Weights[2] = pow(CellDifference - 0.5f, 2) * 0.5f;
@@ -227,24 +263,27 @@ void ParticleToGrid(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
         {
             for (int y = 0; y < 3; y++)
             {
-                float Weight = Weights[x].x * Weights[y].y;
+                for (int z = 0; z < 3; z++)
+                {  
+                    float Weight = Weights[x].x * Weights[y].y * Weights[z].z;
 
-                float4 CellDistance = float4(x - CellDifference.x, y - CellDifference.y, 0.0f, 0.0f) * Fluid.Dx;
+                    float4 CellDistance = float4(x - CellDifference.x, y - CellDifference.y, z - CellDifference.z, 0.0f) * Fluid.Dx;
 
-                float4 AffineByDistance = mul(Affine, CellDistance);
+                    double4 AffineByDistance = mul(Affine, CellDistance);
 
-                float4 Momentum = Particle.Velocity * ParticleData[Index].Mass;
-                Momentum.w = 0.0f;
+                    float4 Momentum = Particle.Velocity * ParticleData[Index].Mass;
+                    Momentum.w = 0.0f;
 
-                int GridIndex = (CellIndex.x + x) * Fluid.GridResolution + CellIndex.y + y;
+                    int GridIndex = ((CellIndex.x + x) * Fluid.GridResolution + CellIndex.y + y) * Fluid.GridResolution + CellIndex.z + z;
 
-                // Grid[GridIndex].w += ParticleData[Index].Mass * Weight;
-                // Grid[GridIndex].xyz += (Momentum).xyz * Weight;
-                int4 IntVelocityAddition = int4(float4((Momentum + AffineByDistance).xyz, ParticleData[Index].Mass) * Weight * 100000);
-                InterlockedAdd(Grid[GridIndex].IntVelocityMass.x, IntVelocityAddition.x);
-                InterlockedAdd(Grid[GridIndex].IntVelocityMass.y, IntVelocityAddition.y);
-                InterlockedAdd(Grid[GridIndex].IntVelocityMass.z, IntVelocityAddition.z);
-                InterlockedAdd(Grid[GridIndex].IntVelocityMass.w, IntVelocityAddition.w);
+                    // Grid[GridIndex].w += ParticleData[Index].Mass * Weight;
+                    // Grid[GridIndex].xyz += (Momentum).xyz * Weight;
+                    int4 IntVelocityAddition = int4(float4((Momentum + AffineByDistance).xyz, ParticleData[Index].Mass) * Weight * 100000);
+                    InterlockedAdd(Grid[GridIndex].IntVelocityMass.x, IntVelocityAddition.x);
+                    InterlockedAdd(Grid[GridIndex].IntVelocityMass.y, IntVelocityAddition.y);
+                    InterlockedAdd(Grid[GridIndex].IntVelocityMass.z, IntVelocityAddition.z);
+                    InterlockedAdd(Grid[GridIndex].IntVelocityMass.w, IntVelocityAddition.w);
+                }
             }
         }
     }
@@ -254,7 +293,7 @@ void ParticleToGrid(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID
 void ClearGrid(uint ThreadIndex : SV_GroupIndex, uint3 GroupId : SV_GroupID)
 {
     uint Index = GetThreadIndex(ThreadIndex, GroupId);
-    if (Index < Fluid.GridResolution * Fluid.GridResolution)
+    if (Index < Fluid.NumGridCells)
     {
         Grid[Index].VelocityMass = float4(0.0f, 0.0f, 0.0f, 0.0f);
         Grid[Index].IntVelocityMass = int4(0, 0., 0, 0);

@@ -273,7 +273,7 @@ namespace Math
         return *this;
     }
 
-    Vec4 Matrix4x4::operator*(const Vec4& B)
+    Vec4 Matrix4x4::operator*(const Vec4& B) const
     {
         return {
             m11 * B.x + m12 * B.y + m13 * B.z + m14 * B.w,
@@ -296,6 +296,15 @@ namespace Math
     Vec4 Vec4::operator*(float Scalar) const
     {
         return {x * Scalar, y * Scalar, z * Scalar, w};
+    }
+
+    Vec4& Vec4::operator/=(float Scalar)
+    {
+        x /= Scalar;
+        y /= Scalar;
+        z /= Scalar;
+        w /= Scalar;
+        return *this;
     }
 
     Matrix4x4 Multiply(const Matrix4x4& A, const Matrix4x4& B)

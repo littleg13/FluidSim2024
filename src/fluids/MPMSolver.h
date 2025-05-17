@@ -17,9 +17,10 @@ struct alignas(Math::Vec4) ParticlePhysicsData
 {
     Math::Matrix C;
     Math::Matrix DeformGradient = Math::Identity;
-    float Mass = 1.0f;
+    float Mass = 4.0f;
     float InitialVolume = 1.0f;
-    float Padding1, Padding2;
+    float J = 1.0f;
+    float Padding2;
 };
 
 class MPMSolver : public IFluidSolver
@@ -29,6 +30,7 @@ public:
     {
         int NumParticles;
         uint32_t GridResolution;
+        uint32_t NumGridCells;
         float Dx;
         float InvDx;
         // Lame parameters
@@ -36,9 +38,10 @@ public:
         float ElasticLamda = 20.0f;
         float DeltaTime;
         float GridSize;
+        float Padding1, Padding2, Padding3;
 
         FluidParameters(int Num, uint32_t Resolution, float Lamda, float Mu, float Timestep, float Size)
-            : NumParticles(Num), ElasticMu(Mu), ElasticLamda(Lamda), GridResolution(Resolution), Dx(Size / float(Resolution)), InvDx(1 / Dx), GridSize(Size), DeltaTime(Timestep)
+            : NumParticles(Num), ElasticMu(Mu), ElasticLamda(Lamda), GridResolution(Resolution), Dx(Size / float(Resolution)), InvDx(1 / Dx), GridSize(Size), DeltaTime(Timestep), NumGridCells(GridResolution * GridResolution * GridResolution)
         {
         }
     };

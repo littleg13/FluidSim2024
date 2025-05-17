@@ -45,6 +45,30 @@ void Controller::HandleMouseMove(uint64_t wParam, int X, int Y)
     {
         GetCurrentView()->Rotate(-Y * MOUSE_SENSITIVITY, -X * MOUSE_SENSITIVITY);
     }
+    if (Grabbing)
+    {
+        Math::Vec2<int32_t> ClientDimensions = D3D12Renderer->GetClientDimensions();
+        CurrentMouseX = std::clamp(CurrentMouseX + X, 0, ClientDimensions.x);
+        CurrentMouseY = std::clamp(CurrentMouseY + Y, 0, ClientDimensions.y);
+    }
+}
+
+const Math::Vec4& Controller::GetProjectedMousePosition()
+{
+    Math::Vec2<int32_t> ClientDimensions = D3D12Renderer->GetClientDimensions();
+    Math::Vec4 ClipPos = Math::Vec4(CurrentMouseX * 2 / float(ClientDimensions.x) - 1.0f, -CurrentMouseY * 2.0f / float(ClientDimensions.y) + 1.0f, 0.1f, 1.0f);
+    Math::Vec4 ViewSpacePos = D3D12Renderer->GetInversePerspective() * ClipPos;
+    ViewSpacePos /= ViewSpacePos.w;
+    OutputDebugString(TEXT(((std::string)ViewSpacePos + " - ViewSpacePos\n").c_str()));
+    ProjectedMousePos = (GetCurrentView()->GetInverse() * ViewSpacePos) - GetCurrentView()->GetEyePos();
+    OutputDebugString(TEXT(((std::string)(ProjectedMousePos.Normalize() * 2.0f + GetCurrentView()->GetEyePos()) + "\n").c_str()));
+    ProjectedMousePos = ProjectedMousePos.Normalize() * 2.0f + GetCurrentView()->GetEyePos();
+    return ProjectedMousePos;
+}
+
+bool Controller::IsRightMouseDown()
+{
+    return Grabbing;
 }
 
 void Controller::HandleMouseButton(uint64_t wParam, int X, int Y)
@@ -55,7 +79,14 @@ void Controller::HandleMouseButton(uint64_t wParam, int X, int Y)
     {
         Panning = true;
     }
+    if (rButton)
+    {
+        Grabbing = true;
+    }
+    CurrentMouseX = X;
+    CurrentMouseY = Y;
 }
+
 void Controller::HandleMouseRelease(uint64_t wParam, int X, int Y)
 {
     bool lButton = (wParam & MK_LBUTTON) != 0;
@@ -64,6 +95,12 @@ void Controller::HandleMouseRelease(uint64_t wParam, int X, int Y)
     {
         Panning = false;
     }
+    if (!rButton)
+    {
+        Grabbing = false;
+    }
+    CurrentMouseX = X;
+    CurrentMouseY = Y;
 }
 
 void Controller::HandleKeyPress(uint64_t wParam, bool isRepeat)

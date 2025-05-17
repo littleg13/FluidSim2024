@@ -20,6 +20,21 @@ const Math::Matrix& View::GetMatrix()
     return ViewMatrix;
 }
 
+const Math::Matrix& View::GetInverse()
+{
+    if (InverseDirty)
+    {
+        InverseViewMatrix = ViewMatrix.Inverse();
+        InverseDirty = false;
+    }
+    return InverseViewMatrix;
+}
+
+const Math::Vec4& View::GetEyePos()
+{
+    return EyePos;
+}
+
 void View::Rotate(const float NewPitch, const float NewYaw)
 {
     // Update Yaw (rotation around Up axis)
@@ -32,6 +47,7 @@ void View::Rotate(const float NewPitch, const float NewYaw)
     Forward = Math::Vec4(CY * CP, SP, SY * CP);
     Forward.Normalize();
     ViewMatrix = Math::ViewMatrix(Forward, Up, EyePos);
+    InverseDirty = true;
 }
 
 void View::Translate(const float X, const float Y, const float Z)
@@ -39,4 +55,5 @@ void View::Translate(const float X, const float Y, const float Z)
     Math::Vec4 Translation = Math::Vec4(X, Y, Z);
     EyePos += Forward * Translation.z + Up.Cross(Forward).Normalize() * Translation.x;
     ViewMatrix = Math::ViewMatrix(Forward, Up, EyePos);
+    InverseDirty = true;
 }

@@ -115,7 +115,7 @@ PSOBuilder& PSOBuilder::AddConstantRootParameter(uint32_t Num32BitValues, uint32
     D3D12_ROOT_PARAMETER1 RootParameter = {
         D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
         {.Constants = {ConstantBufferCount, RegisterSpace, Num32BitValues}},
-        D3D12_SHADER_VISIBILITY_VERTEX};
+        D3D12_SHADER_VISIBILITY_ALL};
     RootParameters.emplace_back(RootParameter);
     ConstantBufferCount++;
     return *this;
@@ -136,7 +136,7 @@ PSOBuilder& PSOBuilder::AddConstantBufferViewRootParameter(uint32_t RegisterSpac
     D3D12_ROOT_PARAMETER1 RootParameter = {
         D3D12_ROOT_PARAMETER_TYPE_CBV,
         {.Descriptor = {ConstantBufferCount, RegisterSpace}},
-        D3D12_SHADER_VISIBILITY_VERTEX};
+        D3D12_SHADER_VISIBILITY_ALL};
     RootParameters.emplace_back(RootParameter);
     ConstantBufferCount++;
     return *this;

@@ -45,7 +45,6 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 struct WindowUserData
 {
     Renderer* D3D12Renderer;
-    Controller* ViewController;
     RECT* OldCursorClip;
 };
 
@@ -109,7 +108,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
     if (UserData)
     {
-        Controller* ViewController = UserData->ViewController;
+        Controller* ViewController = Controller::GetInstance();
         Renderer* D3D12Renderer = UserData->D3D12Renderer;
         RECT WindowRect;
         if (D3D12Renderer->IsInitialized())
@@ -233,20 +232,24 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     D3D12Renderer->SetGraphicsRootSignature(GraphicsRootSignatureBuilder.BuildGraphicsRootSignature(D3D12Renderer->GetDevice()));
 
     PSOBuilder ComputeRootSignatureBuilder;
+    // Mouse info
+    ComputeRootSignatureBuilder.AddConstantRootParameter(4, 0);
     D3D12_DESCRIPTOR_RANGE1 ComputeRanges[2];
+    // Particle buffers
     ComputeRanges[0] = {D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND};
-    ComputeRanges[1] = {D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 3, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND};
+    // Fluid constants
+    ComputeRanges[1] = {D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND};
     ComputeRootSignatureBuilder.AddDescriptorTableRootParameter(2, ComputeRanges);
     D3D12Renderer->SetComputeRootSignature(ComputeRootSignatureBuilder.BuildComputeRootSignature(D3D12Renderer->GetDevice()));
 
     Scene* MainScene = new Scene(D3D12Renderer->GetDevice(), Compiler);
-    Controller* ViewController = new Controller(D3D12Renderer);
+    Controller* ViewController = Controller::CreateInstance(D3D12Renderer);
     View* MainView = ViewController->GetCurrentView();
 
     ViewController->SetCurrentScene(MainScene);
     D3D12Renderer->SetCurrentView(MainView);
 
-    FluidObject* Fluid = new FluidObject(100000, 1.0f, FluidSolver::MPMGPUSolver);
+    FluidObject* Fluid = new FluidObject(200000, 1.0f, FluidSolver::MPMGPUSolver);
     Fluid->CreateBuffers(D3D12Renderer);
     MainScene->AddObject(Fluid);
 
@@ -254,14 +257,13 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     Object->ApplyTranslation(Math::Vec4(0.5f, 0.5f, 0.1));
     Object->ApplyRotation(Math::RotateAboutAxis(Math::Vec4(1, 0, 0), 90));
     Object->CreateBuffers(D3D12Renderer);
-    MainScene->AddObject(Object);
+    // MainScene->AddObject(Object);
 
     RECT OldCursorClip;
     GetClipCursor(&OldCursorClip);
 
     WindowUserData* UserData = new WindowUserData();
     UserData->D3D12Renderer = D3D12Renderer;
-    UserData->ViewController = ViewController;
     UserData->OldCursorClip = &OldCursorClip;
     SetWindowLongPtr(HWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(UserData));
 
@@ -287,8 +289,11 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
     // 500 Updates per second
     std::chrono::milliseconds UpdateFrequency{2};
+    // ~144 frames per second
+    std::chrono::milliseconds RenderFrequency{7};
     double DeltaTime = UpdateFrequency.count() * 1e-3;
     std::chrono::time_point LastUpdate = std::chrono::high_resolution_clock::now();
+    std::chrono::time_point LastRender = std::chrono::high_resolution_clock::now();
     MSG Msg = {};
     while (Msg.message != WM_QUIT)
     {
@@ -311,7 +316,12 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             MainScene->Update(DeltaTime);
             ViewController->Update(DeltaTime);
         }
-        D3D12Renderer->Render();
+        Now = std::chrono::high_resolution_clock::now();
+        if (LastRender + RenderFrequency <= Now)
+        {
+            LastRender = Now;
+            D3D12Renderer->Render();
+        }
         if (ShadersUpdated)
         {
             D3D12Renderer->Flush();
@@ -321,7 +331,6 @@ int WINAPI wWinMain(HINSTANCE HInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
 
     delete D3D12Renderer;
-    delete ViewController;
     delete MainScene;
     delete UserData;
     SetEvent(KillThreadsEvent);
